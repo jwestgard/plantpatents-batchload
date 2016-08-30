@@ -1,0 +1,17 @@
+# the fcrepo REST endpoint
+REST_ENDPOINT: http://localhost:8080/fcrepo/rest/
+
+# the path to tree of serialized repository resources
+BACKUP_LOCATION: testdata/
+
+# credentials to use for your fcrepo
+FEDORA_USER: fedoraAdmin
+FEDORA_PASSWORD: secret3
+
+# 'server-managed' and other namespaces to filter
+FILTER_NAMESPACES: 
+    JCR_NAMESPACE: "http://www.jcp.org/jcr/1.0"
+    JCR_NT_NAMESPACE: "http://www.jcp.org/jcr/nt/1.0"
+    MIX_NAMESPACE: "http://www.jcp.org/jcr/mix/1.0"
+    MODE_NAMESPACE: "http://www.modeshape.org/1.0"
+    REPOSITORY_NAMESPACE: "http://fedora.info/definitions/v4/repository#"
