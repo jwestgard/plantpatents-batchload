@@ -34,22 +34,27 @@ def create_rdfsource(uri):
                              auth=(FEDORA_USER, FEDORA_PASSWORD)
                              )
     if response.status_code == 201:
-        print('{0},gi success.'.format(response))
+        print('{0}, success.'.format(response))
         return response.text
     else:
         print('Failed!')
         return False
         
         
-def upload_file(uri, localpath):
+def upload_file(uri, localpath, checksum):
     print("Creating binary resource... ", end='')
     data = open(localpath, 'rb').read()
-    response = requests.post(
-                        uri, 
-                        auth=(FEDORA_USER, FEDORA_PASSWORD),
-                        data=data,
-                        headers={'Content-Type': 'application/octet-stream'}
-                        )
+    filename = os.path.basename(localpath)
+    headers = { 'Content-Type': 'application/octet-stream',
+                'Digest': 'sha1={0}'.format(checksum),
+                'Content-Disposition': 
+                    'attachment; filename="{0}"'.format(filename)
+                }
+    response = requests.post( uri, 
+                              auth=(FEDORA_USER, FEDORA_PASSWORD),
+                              data=data,
+                              headers=headers
+                              )
     if response.status_code == 201:
         print('{0}, success.'.format(response))
         return response.text
@@ -60,10 +65,10 @@ def upload_file(uri, localpath):
 
 def sparql_update(uri, payload):
     print("Updating resource... ", end='')
-    response = requests.patch(uri, 
-                              auth=(FEDORA_USER, FEDORA_PASSWORD),
-                              data=payload
-                              )
+    response = requests.patch( uri, 
+                               auth=(FEDORA_USER, FEDORA_PASSWORD),
+                               data=payload
+                               )
     if response.status_code == 204:
         print('{0}, success.'.format(response))
         return True
@@ -90,12 +95,13 @@ def sha1(file):
 
 class Resource():
 
-    '''object representing the parts of a single item resource'''
+    '''object representing a plant patent resource and associated images'''
 
     def __init__(self, metadata, asset_path):
         self.__dict__ = metadata
         self.filename = os.path.basename(self.image_url)
         self.filepath = os.path.join(asset_path + self.filename)
+        self.checksum = sha1(self.filepath)
         
         self.triples = [ ("dc:identifier", self.patent_number),
                          ("dc:date", self.date), 
@@ -103,7 +109,6 @@ class Resource():
                          ("dc:title", self.title),
                          ("exterms:category", self.large_category), 
                          ("exterms:uspcNumber", self.uspc), 
-                         ("exterms:imageUrl", self.image_url),
                          ("exterms:sourceUrl", self.patent_url),
                          ("exterms:applicationNumber", self.application_number)
                          ]
@@ -131,7 +136,7 @@ class Resource():
             return False
 
 
-    # update item in fcrepo
+    # create SPARQL update query for updating the item in fcrepo
     def sparql_payload(self):
         query = []
         for ns,uri in NAMESPACE_BINDINGS.items():
@@ -149,7 +154,7 @@ class Resource():
         self.file_triples = [("exterms:scandate", self.scan_date),
                              ("exterms:filename", self.filename)
                              ("dc:extent", self.pages),
-                             ("pcdm:memberOf", patent_uri)
+                             ("pcdm:fileOf", patent_uri)
                              ]
         
 
@@ -184,6 +189,9 @@ def main():
     with open(args.config, 'r') as configfile:
         globals().update(yaml.safe_load(configfile))
     
+    # open a file to log assets loaded and URIs
+    logfile = open(os.path.join(args.directory, "load.log"), 'w')
+    
     # check the backup tree
     print('Scanning directory tree => {0}'.format(args.directory))
     
@@ -199,15 +207,13 @@ def main():
         print("\n{0}. {1}: {2}".format(n+1, r.title, r.filename))
         print("Local path: {0}".format(r.filepath), end='')
         if r.file_exists():
-            print("  => file found!")
+            print(" => file exists.")
         else:
             print("ERROR!\n => Cannot access file {0}".format(r.filepath))
-            sys.exit()
-            
-        # generate checksum locally
-        checksum = sha1(r.filepath)
-        print("SHA1 checksum: {0}".format(checksum))
-
+            continue
+        
+        print("SHA1 checksum: {0}".format(r.checksum))    
+    
         # open transaction, create objects, update objects, commit
         print("Opening transaction to create resources... ", end='')
         response = requests.post("http://localhost:8080/fcrepo/rest/fcr:tx", 
@@ -215,11 +221,10 @@ def main():
                                  )
         print("{0}, transaction open".format(response))
         transaction = response.headers
-        transaction_uri = transaction['Location']
-        commit_uri = transaction_uri + "/fcr:tx/fcr:commit"
+        commit_uri = transaction['Location'] + "/fcr:tx/fcr:commit"
         
-        patent_uri = create_rdfsource(transaction_uri)
-        file_uri = upload_file(transaction_uri, r.filepath)
+        patent_uri = create_rdfsource(transaction['Location'])
+        file_uri = upload_file(transaction['Location'], r.filepath, r.checksum)
         sparql_update(patent_uri, r.sparql_payload())
         
         print("Committing transaction... ", end='')
@@ -228,6 +233,7 @@ def main():
                                  )
         if response.status_code == 204:
             print('{0} transaction complete!'.format(response))
+            logfile.write("\t".join([r.title, patent_uri, file_uri]))
         else:
             print('Failed!')
 
