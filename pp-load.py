@@ -4,13 +4,13 @@ from __future__ import print_function
 
 import argparse
 import csv
+import hashlib
 import logging
 import os
 import requests
 from io import BytesIO
 import sys
 import yaml
-
 
 #============================================================================
 # HELPER FUNCTIONS
@@ -28,18 +28,35 @@ def check_repo_connection():
         return False 
 
    
-def create_rdfsource():
-    print("Creating resource... ", end='')
-    response = requests.post(REST_ENDPOINT, 
+def create_rdfsource(uri):
+    print("Creating RDF resource... ", end='')
+    response = requests.post(uri, 
                              auth=(FEDORA_USER, FEDORA_PASSWORD)
                              )
     if response.status_code == 201:
-        print('Success!')
+        print('{0},gi success.'.format(response))
         return response.text
     else:
         print('Failed!')
         return False
         
+        
+def upload_file(uri, localpath):
+    print("Creating binary resource... ", end='')
+    data = open(localpath, 'rb').read()
+    response = requests.post(
+                        uri, 
+                        auth=(FEDORA_USER, FEDORA_PASSWORD),
+                        data=data,
+                        headers={'Content-Type': 'application/octet-stream'}
+                        )
+    if response.status_code == 201:
+        print('{0}, success.'.format(response))
+        return response.text
+    else:
+        print('Failed!')
+        return False
+
 
 def sparql_update(uri, payload):
     print("Updating resource... ", end='')
@@ -48,11 +65,23 @@ def sparql_update(uri, payload):
                               data=payload
                               )
     if response.status_code == 204:
-        print('Success!')
+        print('{0}, success.'.format(response))
         return True
     else:
         print('Failed!')
         return False
+
+
+def sha1(file):
+    BUF_SIZE = 65536
+    sha1 = hashlib.sha1()
+    with open(file, 'rb') as f:
+        while True:
+            data = f.read(BUF_SIZE)
+            if not data:
+                break
+            sha1.update(data)
+    return sha1.hexdigest()
 
 
 #============================================================================
@@ -67,23 +96,31 @@ class Resource():
         self.__dict__ = metadata
         self.filename = os.path.basename(self.image_url)
         self.filepath = os.path.join(asset_path + self.filename)
+        
         self.triples = [ ("dc:identifier", self.patent_number),
                          ("dc:date", self.date), 
                          ("dc:year", self.year), 
                          ("dc:title", self.title),
                          ("exterms:category", self.large_category), 
-                         ("dc:creator", self.inventor), 
-                         ("exterms:inventorCity", self.city), 
-                         ("exterms:inventorState", self.state), 
-                         ("exterms:inventorCountry", self.country), 
                          ("exterms:uspcNumber", self.uspc), 
                          ("exterms:imageUrl", self.image_url),
                          ("exterms:sourceUrl", self.patent_url),
                          ("exterms:applicationNumber", self.application_number)
                          ]
                          
-#        self.file_triples + [ ( , ),
-#                            ]
+        for inventor in self.inventor.split(';'):
+            self.triples.append( ("dc:creator", inventor) )
+        for city in self.city.split(';'):
+            self.triples.append( ("exterms:inventorCity", city) )
+        for state in self.state.split(';'):
+            self.triples.append( ("exterms:inventorState", state) )
+        for country in self.country.split(';'):
+            self.triples.append( ("exterms:inventorCountry", country) )
+                         
+        self.file_triples = [ ("exterms:extent", self.pages),
+                              ("exterms:scanDate", self.scan_date),
+                              ("exterms:fileName", self.filename)
+                              ]
         
     
     # confirm accessibility of an associated binary    
@@ -160,29 +197,39 @@ def main():
     for n, row in enumerate(metadata):
         r = Resource(row, args.directory)
         print("\n{0}. {1}: {2}".format(n+1, r.title, r.filename))
-        print("Filepath: {0}".format(r.filepath))
+        print("Local path: {0}".format(r.filepath), end='')
         if r.file_exists():
-            print("  => File found!")
+            print("  => file found!")
         else:
-            print("ERROR => Cannot access file {0}".format(r.filepath))
+            print("ERROR!\n => Cannot access file {0}".format(r.filepath))
             sys.exit()
+            
+        # generate checksum locally
+        checksum = sha1(r.filepath)
+        print("SHA1 checksum: {0}".format(checksum))
 
         # open transaction, create objects, update objects, commit
-        #(1) start transaction
+        print("Opening transaction to create resources... ", end='')
+        response = requests.post("http://localhost:8080/fcrepo/rest/fcr:tx", 
+                                 auth=(FEDORA_USER, FEDORA_PASSWORD)
+                                 )
+        print("{0}, transaction open".format(response))
+        transaction = response.headers
+        transaction_uri = transaction['Location']
+        commit_uri = transaction_uri + "/fcr:tx/fcr:commit"
         
-        #(2) create item
-        patent_uri = create_rdfsource()
-        
-        #(3) create file
-        # file_uri = create_rdfsource()
-        
-        #(4) attach binary
-        #(5) update item
+        patent_uri = create_rdfsource(transaction_uri)
+        file_uri = upload_file(transaction_uri, r.filepath)
         sparql_update(patent_uri, r.sparql_payload())
         
-        #(6) update file 
-        #(7) commit transaction
-        
+        print("Committing transaction... ", end='')
+        response = requests.post(commit_uri, 
+                                 auth=(FEDORA_USER, FEDORA_PASSWORD)
+                                 )
+        if response.status_code == 204:
+            print('{0} transaction complete!'.format(response))
+        else:
+            print('Failed!')
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 # the fcrepo REST endpoint
-REST_ENDPOINT: http://localhost:8080/fcrepo/rest/test2
+REST_ENDPOINT: http://localhost:8080/fcrepo/rest
 
 # credentials to use for your fcrepo
 FEDORA_USER: fedoraAdmin
