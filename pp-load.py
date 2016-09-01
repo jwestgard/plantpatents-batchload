@@ -111,6 +111,7 @@ class Resource():
                          ("exterms:uspcNumber", self.uspc), 
                          ("exterms:sourceUrl", self.patent_url),
                          ("exterms:applicationNumber", self.application_number)
+                         ("rdf:type", "pcdm:Object")
                          ]
                          
         for inventor in self.inventor.split(';'):
@@ -124,7 +125,8 @@ class Resource():
                          
         self.file_triples = [ ("exterms:extent", self.pages),
                               ("exterms:scanDate", self.scan_date),
-                              ("exterms:fileName", self.filename)
+                              ("exterms:fileName", self.filename),
+                              ("rdf:type", "pcdm:File")
                               ]
         
     
@@ -224,7 +226,11 @@ def main():
         commit_uri = transaction['Location'] + "/fcr:tx/fcr:commit"
         
         patent_uri = create_rdfsource(transaction['Location'])
-        file_uri = upload_file(transaction['Location'], r.filepath, r.checksum)
+        file_uri = upload_file( transaction['Location'], 
+                                r.filepath, 
+                                r.checksum,
+                                patent_uri
+                                )
         sparql_update(patent_uri, r.sparql_payload())
         
         print("Committing transaction... ", end='')
@@ -233,7 +239,7 @@ def main():
                                  )
         if response.status_code == 204:
             print('{0} transaction complete!'.format(response))
-            logfile.write("\t".join([r.title, patent_uri, file_uri]))
+            logfile.writeline("\t".join([r.title, patent_uri, file_uri]))
         else:
             print('Failed!')
 
