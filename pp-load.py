@@ -41,7 +41,7 @@ def create_rdfsource(uri):
         return False
         
         
-def upload_file(uri, localpath, checksum):
+def upload_file(uri, localpath, checksum, patent_uri):
     print("Creating binary resource... ", end='')
     data = open(localpath, 'rb').read()
     filename = os.path.basename(localpath)
@@ -69,6 +69,7 @@ def sparql_update(uri, payload):
                                auth=(FEDORA_USER, FEDORA_PASSWORD),
                                data=payload
                                )
+    print(response)
     if response.status_code == 204:
         print('{0}, success.'.format(response))
         return True
@@ -110,7 +111,7 @@ class Resource():
                          ("exterms:category", self.large_category), 
                          ("exterms:uspcNumber", self.uspc), 
                          ("exterms:sourceUrl", self.patent_url),
-                         ("exterms:applicationNumber", self.application_number)
+                         ("exterms:applicationNumber", self.application_number),
                          ("rdf:type", "pcdm:Object")
                          ]
                          
@@ -148,6 +149,7 @@ class Resource():
             if o is not "":
                 query.append('<> {0} "{1}" .'.format(p, o))
         query.append("}")
+        print("/n".join(query))
         return "\n".join(query)
 
 
@@ -239,7 +241,7 @@ def main():
                                  )
         if response.status_code == 204:
             print('{0} transaction complete!'.format(response))
-            logfile.writeline("\t".join([r.title, patent_uri, file_uri]))
+            logfile.write("\t".join([r.title, patent_uri, file_uri]) + "/n")
         else:
             print('Failed!')
 
