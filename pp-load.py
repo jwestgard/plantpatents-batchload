@@ -38,6 +38,7 @@ def create_rdfsource(uri):
         return response.text
     else:
         print('Failed!')
+        continue
         return False
         
         
@@ -60,6 +61,7 @@ def upload_file(uri, localpath, checksum, patent_uri):
         return response.text
     else:
         print('Failed!')
+        continue
         return False
 
 
@@ -77,7 +79,7 @@ def sparql_update(uri, payload):
         return True
     else:
         print('Failed!')
-        print(response.headers)
+        continue
         return False
 
 
@@ -231,9 +233,8 @@ def main():
         transaction = response.headers
         commit_uri = transaction['Location'] + "/fcr:tx/fcr:commit"
         
-        patent_uri = create_rdfsource(REST_ENDPOINT)
-        print(patent_uri)
-        file_uri = upload_file( REST_ENDPOINT, 
+        patent_uri = create_rdfsource(transaction['Location'])
+        file_uri = upload_file( transaction['Location'], 
                                 r.filepath, 
                                 r.checksum,
                                 patent_uri
