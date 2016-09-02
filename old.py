@@ -12,9 +12,6 @@ from io import BytesIO
 import sys
 import yaml
 
-auth=(FEDORA_USER, FEDORA_PASSWORD)
-
-
 #============================================================================
 # HELPER FUNCTIONS
 #============================================================================
@@ -30,70 +27,81 @@ def check_repo_connection():
     else:
         return False 
 
+   
+def create_rdfsource(uri):
+    print("Creating RDF resource... ", end='')
+    response = requests.post(uri, 
+                             auth=(FEDORA_USER, FEDORA_PASSWORD)
+                             )
+    if response.status_code == 201:
+        print('{0}, success.'.format(response))
+        return response.text
+    else:
+        print('Failed!')
+        continue
+        return False
+        
+        
+def upload_file(uri, localpath, checksum, patent_uri):
+    print("Creating binary resource... ", end='')
+    data = open(localpath, 'rb').read()
+    filename = os.path.basename(localpath)
+    headers = { 'Content-Type': 'application/octet-stream',
+                'Digest': 'sha1={0}'.format(checksum),
+                'Content-Disposition': 
+                    'attachment; filename="{0}"'.format(filename)
+                }
+    response = requests.post( uri, 
+                              auth=(FEDORA_USER, FEDORA_PASSWORD),
+                              data=data,
+                              headers=headers
+                              )
+    if response.status_code == 201:
+        print('{0}, success.'.format(response))
+        return response.text
+    else:
+        print('Failed!')
+        continue
+        return False
+
+
+def sparql_update(uri, payload):
+    print("Updating resource... ", end='')
+    response = requests.patch( uri, 
+                               auth=(FEDORA_USER, FEDORA_PASSWORD),
+                               data=payload,
+                               headers={'Content-type': 
+                                    'application/sparql-update'} 
+                               )
+    print(response)
+    if response.status_code == 204:
+        print('{0}, success.'.format(response))
+        return True
+    else:
+        print('Failed!')
+        continue
+        return False
+
+
+def sha1(file):
+    BUF_SIZE = 65536
+    sha1 = hashlib.sha1()
+    with open(file, 'rb') as f:
+        while True:
+            data = f.read(BUF_SIZE)
+            if not data:
+                break
+            sha1.update(data)
+    return sha1.hexdigest()
+
 
 #============================================================================
-# CLASSES
+# RESOURCE CLASS
 #============================================================================
 
 class Resource():
 
-     '''methods for interacting with a resource on fcrepo'''
-
-    def __init__(self):
-        pass
-    
-    
-    def create_rdfsource():
-        print("Creating RDF resource... ", end='')
-        response = requests.post(REST_ENDPOINT, auth=auth)
-
-        if response.status_code == 201:
-            print('{0}, success.'.format(response))
-            return response.text
-        else:
-            print('Failed!')
-            return False
-            
-            
-    def sparql_update(uri, payload):
-        print("Updating resource... ", end='')
-        response = requests.patch(uri, 
-                                  auth=(FEDORA_USER, FEDORA_PASSWORD),
-                                  data=payload
-                                  )
-        if response.status_code == 204:
-            print('{0}, success.'.format(response))
-            return True
-        else:
-            print('Failed!')
-            return False
-
-
-
-    # create SPARQL query string for updating a resource
-    def sparql_payload(self):
-        query = []
-        for ns,uri in NAMESPACE_BINDINGS.items():
-            query.append("PREFIX {0}: <{1}>".format(ns,uri))
-        query.append("INSERT DATA {")
-        for p,o in self.triples:
-            if o is not "":
-                query.append('<> {0} "{1}" .'.format(p, o))
-        query.append("}")
-        return "\n".join(query)
-
-
-    # update file in fcrepo        
-    def create_file_object(self, patent_uri):
-        self.file_triples = [("exterms:scandate", self.scan_date),
-                             ("exterms:filename", self.filename)
-                             ("dc:extent", self.pages),
-                             ("pcdm:fileOf", patent_uri)
-                             ]
-
-class Patent(Resource):
-
-    '''represents a plant patent resource'''
+    '''object representing a plant patent resource and associated images'''
 
     def __init__(self, metadata, asset_path):
         self.__dict__ = metadata
@@ -108,7 +116,7 @@ class Patent(Resource):
                          ("exterms:category", self.large_category), 
                          ("exterms:uspcNumber", self.uspc), 
                          ("exterms:sourceUrl", self.patent_url),
-                         ("exterms:applicationNumber", self.application_number)
+                         ("exterms:applicationNumber", self.application_number),
                          ("rdf:type", "pcdm:Object")
                          ]
                          
@@ -121,67 +129,44 @@ class Patent(Resource):
         for country in self.country.split(';'):
             self.triples.append( ("exterms:inventorCountry", country) )
                          
+        self.file_triples = [ ("exterms:extent", self.pages),
+                              ("exterms:scanDate", self.scan_date),
+                              ("exterms:fileName", self.filename),
+                              ("rdf:type", "pcdm:File")
+                              ]
         
-        
-
-class File(Resource):
     
-    '''object representing an associated image resource'''
-    
-    def __init__(self, parent, local_path):
-        self.checksum = sha1(local_path)
-        self.metadata = [ ("exterms:extent", parent.pages),
-                          ("exterms:scanDate", parent.scan_date),
-                          ("exterms:fileName", parent.filename),
-                          ("rdf:type", "pcdm:File")
-                          ("pcdm:fileOf", parent.uri)
-                          ]
-    
-    
-    # confirm accessibility of a local file    
+    # confirm accessibility of an associated binary    
     def file_exists(self):
         if os.path.isfile(self.filepath):
             return True
         else:
             return False
-    
-    
-    # generate SHA1 checksum on a file
-    def sha1(file):
-        BUF_SIZE = 65536
-        sha1 = hashlib.sha1()
-        with open(file, 'rb') as f:
-            while True:
-                data = f.read(BUF_SIZE)
-                if not data:
-                    break
-                sha1.update(data)
-        return sha1.hexdigest()
+
+
+    # create SPARQL update query for updating the item in fcrepo
+    def sparql_payload(self):
+        query = []
+        for ns,uri in NAMESPACE_BINDINGS.items():
+            query.append("PREFIX {0}: <{1}>".format(ns,uri))
+        query.append("INSERT DATA {")
+        for p,o in self.triples:
+            if o is not "":
+                query.append("<> {0} '{1}' .".format(p, o))
+        query.append("}")
+        print("\n".join(query))
+        return "\n".join(query)
+
+
+    # update file in fcrepo        
+    def create_file_object(self, patent_uri):
+        self.file_triples = [("exterms:scandate", self.scan_date),
+                             ("exterms:filename", self.filename),
+                             ("dc:extent", self.pages),
+                             ("pcdm:fileOf", patent_uri),
+                             ("rdf:type", "pcdm:Object")
+                             ]
         
-    
-    def upload_file(uri, localpath, checksum):
-        print("Creating binary resource... ", end='')
-        data = open(localpath, 'rb').read()
-        filename = os.path.basename(localpath)
-        headers = { 'Content-Type': 'application/octet-stream',
-                    'Digest': 'sha1={0}'.format(checksum),
-                    'Content-Disposition': 
-                        'attachment; filename="{0}"'.format(filename)
-                    }
-        response = requests.post( uri, 
-                                  auth=(FEDORA_USER, FEDORA_PASSWORD),
-                                  data=data,
-                                  headers=headers
-                                  )
-        if response.status_code == 201:
-            print('{0}, success.'.format(response))
-            return response.text
-        else:
-            print('Failed!')
-            return False
-
-
- 
 
 #============================================================================
 # MAIN LOOP
@@ -189,11 +174,11 @@ class File(Resource):
 
 def main():
     
-    '''Parse args, loop over local directory and create resources'''
+    '''Parse args, loop over repository and restore.'''
     
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Load data to a Fedora4 repository')
+        description='Restore serialized Fedora repository.')
     
     parser.add_argument('-c', '--config', required=True,
                         help='relative or absolute path to the YAML config file'
@@ -262,7 +247,7 @@ def main():
                                  )
         if response.status_code == 204:
             print('{0} transaction complete!'.format(response))
-            logfile.writeline("\t".join([r.title, patent_uri, file_uri]))
+            logfile.write("\t".join([r.title, patent_uri, file_uri]) + "\n")
         else:
             print('Failed!')
 
