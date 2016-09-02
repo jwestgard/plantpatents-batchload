@@ -67,7 +67,9 @@ def sparql_update(uri, payload):
     print("Updating resource... ", end='')
     response = requests.patch( uri, 
                                auth=(FEDORA_USER, FEDORA_PASSWORD),
-                               data=payload
+                               data=payload,
+                               headers={'Content-type': 
+                                    'application/sparql-update'} 
                                )
     print(response)
     if response.status_code == 204:
@@ -75,6 +77,7 @@ def sparql_update(uri, payload):
         return True
     else:
         print('Failed!')
+        print(response.headers)
         return False
 
 
@@ -147,18 +150,19 @@ class Resource():
         query.append("INSERT DATA {")
         for p,o in self.triples:
             if o is not "":
-                query.append('<> {0} "{1}" .'.format(p, o))
+                query.append("<> {0} '{1}' .".format(p, o))
         query.append("}")
-        print("/n".join(query))
+        print("\n".join(query))
         return "\n".join(query)
 
 
     # update file in fcrepo        
     def create_file_object(self, patent_uri):
         self.file_triples = [("exterms:scandate", self.scan_date),
-                             ("exterms:filename", self.filename)
+                             ("exterms:filename", self.filename),
                              ("dc:extent", self.pages),
-                             ("pcdm:fileOf", patent_uri)
+                             ("pcdm:fileOf", patent_uri),
+                             ("rdf:type", "pcdm:Object")
                              ]
         
 
@@ -227,8 +231,9 @@ def main():
         transaction = response.headers
         commit_uri = transaction['Location'] + "/fcr:tx/fcr:commit"
         
-        patent_uri = create_rdfsource(transaction['Location'])
-        file_uri = upload_file( transaction['Location'], 
+        patent_uri = create_rdfsource(REST_ENDPOINT)
+        print(patent_uri)
+        file_uri = upload_file( REST_ENDPOINT, 
                                 r.filepath, 
                                 r.checksum,
                                 patent_uri
@@ -241,7 +246,7 @@ def main():
                                  )
         if response.status_code == 204:
             print('{0} transaction complete!'.format(response))
-            logfile.write("\t".join([r.title, patent_uri, file_uri]) + "/n")
+            logfile.write("\t".join([r.title, patent_uri, file_uri]) + "\n")
         else:
             print('Failed!')
 
