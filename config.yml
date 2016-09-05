@@ -5,33 +5,30 @@ REST_ENDPOINT: http://localhost:8080/fcrepo/rest
 FEDORA_USER: fedoraAdmin
 FEDORA_PASSWORD: secret3
 
+ASSET_DIR: "../assets"
+METADATA_FILE: "../metadata.csv"
+LOG_FILE: "logs/load.log"
+
 # namespaces to pre-bind
 NAMESPACE_BINDINGS: 
+    audit:          http://fedora.info/definitions/v4/audit#
+    authz:          http://fedora.info/definitions/v4/authorization#
     bibo:           http://purl.org/ontology/bibo/
     dc:             http://purl.org/dc/elements/1.1/
-    exterms:        http://www.example.org/terms/
-    foaf:           http://xmlns.com/foaf/0.1/
+    ebucore:        http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#
+    ex:             http://www.example.org/terms/
+    fedora:         http://fedora.info/definitions/v4/repository#
+    fedoraconfig:   http://fedora.info/definitions/v4/config#
+    image:          http://www.modeshape.org/images/1.0
+    jcr:            http://www.jcp.org/jcr/1.0
+    ldp:            http://www.w3.org/ns/ldp#
+    mix:            http://www.jcp.org/jcr/mix/1.0
+    mode:           http://www.modeshape.org/1.0
+    nt:             http://www.jcp.org/jcr/nt/1.0
     pcdm:           http://pcdm.org/models#
     premis:         http://www.loc.gov/premis/rdf/v1#
-    nt:             http://www.jcp.org/jcr/nt/1.0
-    rdfs:           http://www.w3.org/2000/01/rdf-schema#
-    xsi:            http://www.w3.org/2001/XMLSchema-instance
-    mode:           http://www.modeshape.org/1.0
-    xmlns:          http://www.w3.org/2000/xmlns/
-    audit:          http://fedora.info/definitions/v4/audit#
-    xml:            http://www.w3.org/XML/1998/namespace
-    jcr:            http://www.jcp.org/jcr/1.0
-    fedoraconfig:   http://fedora.info/definitions/v4/config#
-    mix:            http://www.jcp.org/jcr/mix/1.0
     prov:           http://www.w3.org/ns/prov#
-    foaf:           http://xmlns.com/foaf/0.1/
-    authz:          http://fedora.info/definitions/v4/authorization#
-    image:          http://www.modeshape.org/images/1.0
     sv:             http://www.jcp.org/jcr/sv/1.0
-    test:           info:fedora/test/
-    rdf:            http://www.w3.org/1999/02/22-rdf-syntax-ns#
-    fedora:         http://fedora.info/definitions/v4/repository#
-    ebucore:        http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#
-    ldp:            http://www.w3.org/ns/ldp#
-    xs:             http://www.w3.org/2001/XMLSchema
-    
+    xml:            http://www.w3.org/XML/1998/namespace
+    xmlns:          http://www.w3.org/2000/xmlns/
+    xsi:            http://www.w3.org/2001/XMLSchema-instance
