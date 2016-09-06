@@ -71,9 +71,15 @@ class Resource():
         print(self.graph.serialize(format="turtle").decode())
 
 
-    # create an empty resource
+    # create an rdfsource container resource
     def create_rdf(self, endpoint, auth):
-        response = requests.post(endpoint, auth=auth)
+        headers = {'Content-Type': 'text/turtle'}
+        data = self.graph.serialize(format="turtle")
+        response = requests.post(endpoint, 
+                                 auth=auth, 
+                                 data=data,
+                                 headers=headers
+                                 )
         if response.status_code == 201:
             self.uri = REST_ENDPOINT + response.text[len(endpoint):]
             return True
