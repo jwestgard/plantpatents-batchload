@@ -117,10 +117,10 @@ class Resource():
     # update existing resource with sparql update
     def sparql_update(self, endpoint, auth, triples):
         data = ['PREFIX pcdm: <http://pcdm.org/models#>']
-        data.append('INSERT {')
+        data.append('INSERT DATA {')
         for (prefix, predicate, object) in triples:
-            data.append('<> {0}:{1} "{2}" .'.format(prefix, predicate, object))
-        data.append('} WHERE { }')
+            data.append('<> {0}:{1} <{2}> .'.format(prefix, predicate, object))
+        data.append('}')
         payload = '\n'.join(data)
         headers = {'Content-Type': 'application/sparql-update'}
         response = requests.patch(endpoint, 
@@ -374,12 +374,13 @@ def main():
         print("  => SHA1 checksum: {0}\n".format(patent.file.checksum))
         
         # open transaction
-        print("Opening transaction to create resources... ", end='')
+        print("Opening item transaction... ")
         transaction = Transaction(REST_ENDPOINT, auth)
-        print("ID:{0}".format(transaction.id))
+        print("  => Transaction ID:{0}".format(transaction.id))
         
         # create empty container
-        print("Creating repository container... ", end='')
+        print("Creating rdf container...         ", end='')
+        patent.print_graph()
         if patent.create_rdf(transaction.uri, auth):
             print("success!")
         else:
@@ -388,7 +389,7 @@ def main():
             continue
         
         # create binary
-        print("Uploading binary reource... ", end='')
+        print("Uploading binary reource...       ", end='')
         if patent.file.create_nonrdf(transaction.uri, auth):
             print("success!")
         else:
@@ -397,7 +398,7 @@ def main():
             continue
         
         # update and patch patent metadata graph
-        '''print("Updating patent metadata graph... ", end='')
+        print("Updating patent metadata graph... ", end='')
         sparql_uri = "{0}{1}{2}".format(REST_ENDPOINT,
                                         transaction.id,
                                         patent.uri[len(REST_ENDPOINT):]
@@ -408,7 +409,7 @@ def main():
         else:
             print("failed!")
             transaction.rollback()
-            continue'''
+            continue
         
         # update and patch binary metadata graph
         print("Updating binary metadata graph... ", end='')
@@ -426,14 +427,13 @@ def main():
             continue
         
         # commit transaction or rollback
-        print("Committing transaction... ", end='')
+        print("Committing transaction...         ", end='')
         if transaction.commit():
             print("success!")
         else:
             print("failed!")
             transaction.rollback()
         
-        print("\t".join([patent.uri, patent.file.uri]))
         # write to log
         logfile.write("\t".join([patent.uri, patent.file.uri]) + "\n")
 
