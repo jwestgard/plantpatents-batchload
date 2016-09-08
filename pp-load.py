@@ -26,10 +26,10 @@ ns = {
     'rdf':          Namespace('http://www.w3.org/1999/02/22-rdf-syntax-ns#'),
     'uspatent':     Namespace('http://us.patents.aksw.org/patent/'),
     'uspatent-s':   Namespace('http://us.patents.aksw.org/schema/'),
-    'xml':          Namespace('http://www.w3.org/XML/1998/namespace/'),
+    'xml':          Namespace('http://www.w3.org/XML/1998/namespace'),
     'xmlns':        Namespace('http://www.w3.org/2000/xmlns/'),
     'xsd':          Namespace('http://www.w3.org/2001/XMLSchema#'),
-    'xsi':          Namespace('http://www.w3.org/2001/XMLSchema-instance/')
+    'xsi':          Namespace('http://www.w3.org/2001/XMLSchema-instance')
     }
 
 
@@ -81,21 +81,24 @@ class Resource():
                                  headers=headers
                                  )
         if response.status_code == 201:
-            self.uri = REST_ENDPOINT + response.text[len(endpoint):]
+            self.repopath = response.text[len(endpoint):]
+            self.uri = REST_ENDPOINT + self.repopath
             return True
         else:
             return False
 
 
     # upload a binary resource
-    def create_nonrdf(self, endpoint, auth):
+    def create_nonrdf(self, endpoint, parentpath, auth):
+        int_uri = "{0}{1}/internal".format(endpoint, parentpath)
+        print(int_uri)
         data = open(self.local_path, 'rb').read()
         headers = {'Content-Type': 'application/pdf',
                    'Digest': 'sha1={0}'.format(self.checksum),
                    'Content-Disposition': 
                         'attachment; filename="{0}"'.format(self.filename)
                     }
-        response = requests.post(endpoint, 
+        response = requests.put(int_uri, 
                                  auth=auth, 
                                  data=data, 
                                  headers=headers
@@ -116,10 +119,12 @@ class Resource():
 
     # update existing resource with sparql update
     def sparql_update(self, endpoint, auth, triples):
-        data = ['PREFIX pcdm: <http://pcdm.org/models#>']
+        data = []
+        for ns_pre, ns_uri in ns.items():
+            data.append('PREFIX {0}: <{1}>'.format(ns_pre, ns_uri))
         data.append('INSERT DATA {')
         for (prefix, predicate, object) in triples:
-            data.append('<> {0}:{1} <{2}> .'.format(prefix, predicate, object))
+            data.append('<> {0}:{1} {2} .'.format(prefix, predicate, object))
         data.append('}')
         payload = '\n'.join(data)
         headers = {'Content-Type': 'application/sparql-update'}
@@ -163,7 +168,8 @@ class Patent(Resource):
         Resource.__init__(self, metadata)
         
         self.filename = os.path.basename(self.asset_path)
-        self.file_metadata = {'pages': self.pages, 
+        self.file_metadata = {'title': "Color images of {0}".format(self.title),
+                              'pages': self.pages, 
                               'scan_date': self.scan_date,
                               'local_path': self.asset_path
                               }
@@ -171,6 +177,9 @@ class Patent(Resource):
         
         self.graph.add(
             (self.uri, ns['dc'].title, Literal(self.title))
+            )
+        self.graph.add(
+            (self.uri, ns['pcdm'].memberOf, self.collection)
             )
         self.graph.add(
             (self.uri, ns['uspatent-s'].docNo, Literal(self.patent_number))
@@ -189,10 +198,10 @@ class Patent(Resource):
             (self.uri, ns['rdf'].type, ns['pcdm'].Object)
             )
         self.graph.add(
-            (self.uri, ns['ex'].otherid, Literal(self.uspc))
+            (self.uri, ns['dc'].subject, Literal(self.uspc))
             )
         self.graph.add(
-            (self.uri, ns['ex'].otherid, Literal(self.application_number))
+            (self.uri, ns['dc'].identifier, Literal(self.application_number))
             )
         for inventor in self.inventor.split(';'):
             if inventor is not "":
@@ -214,7 +223,21 @@ class Patent(Resource):
                 self.graph.add(
                     (self.uri, ns['ex'].inventorCountry, Literal(country))
                     )
-
+                    
+                    
+    def create_ext(self, endpoint, auth):
+        headers = {'Content-Type': ('message/external-body; access-type=URL; '
+                   'URL="{0}"'.format(self.image_url))
+                   }
+        ext_uri = "{0}{1}/external".format(endpoint, self.repopath)
+        response = requests.put(ext_uri, 
+                                auth=auth, 
+                                headers=headers
+                                )
+        if response.status_code == 201:
+            return True
+        else:
+            return False
 
 
 class File(Resource):
@@ -227,6 +250,9 @@ class File(Resource):
         self.checksum = self.sha1()
         
         self.graph.add(
+            (self.uri, ns['dc'].title, Literal(self.title))
+            )
+        self.graph.add(
             (self.uri, ns['rdf'].type, ns['pcdm'].File)
             )
         self.graph.add(
@@ -236,9 +262,6 @@ class File(Resource):
         self.graph.add(
             (self.uri, ns['dc'].date, Literal(self.scan_date, 
                                                datatype=ns['xsd'].datetime))
-            )
-        self.graph.add(
-            (self.uri, ns['rdf'].type, ns['pcdm'].File)
             )
     
     
@@ -365,9 +388,22 @@ def main():
         print("Verify that your repository is online and try again.")
         sys.exit()
     
+    # create collection
+    print("Creating plant patents collection")
+    plantpatents = Resource({'title': 'Plant Patents Images'})
+    plantpatents.members = []
+    plantpatents.uri = URIRef("{0}/plantpatents".format(REST_ENDPOINT))
+    plantpatents.graph.add(
+        (URIRef(plantpatents.uri), ns['dc'].title, Literal(plantpatents.title))
+        )
+    plantpatents.graph.add(
+        (plantpatents.uri, ns['rdf'].type, ns['pcdm'].collection)
+        )
+    plantpatents.put_graph((REST_ENDPOINT + "/plantpatents"), auth)
     
     # loop over metadata, generate containers, and POST to fcrepo
     for n, row in enumerate(metadata):
+        row['collection'] = plantpatents.uri
         patent = Patent(row)
         print("\n{0}. {1}: {2}".format(n+1, patent.title, patent.filename))
         print("  => Local path: {0}".format(patent.asset_path))
@@ -380,22 +416,38 @@ def main():
         
         # create empty container
         print("Creating rdf container...         ", end='')
-        patent.print_graph()
         if patent.create_rdf(transaction.uri, auth):
             print("success!")
         else:
             print("failed!")
             transaction.rollback()
             continue
+            
+        # create external body
+        patent.create_ext("{0}".format(transaction.uri), auth)
+        
         
         # create binary
         print("Uploading binary reource...       ", end='')
-        if patent.file.create_nonrdf(transaction.uri, auth):
+        if patent.file.create_nonrdf(transaction.uri, patent.repopath, auth):
             print("success!")
         else:
             print("failed!")
             transaction.rollback()
             continue
+        
+        '''# load metadata to binary
+        print("Uploading metadata for binary...  ", end='')
+        print((transaction.uri + patent.file.repopath + "/fcr:metadata"))
+        if patent.file.put_graph(
+            (transaction.uri + patent.file.repopath + "/fcr:metadata"), auth
+            ):
+            print("success!")
+        else:
+            print("failed!")
+            transaction.rollback()
+            continue'''
+        
         
         # update and patch patent metadata graph
         print("Updating patent metadata graph... ", end='')
@@ -403,7 +455,7 @@ def main():
                                         transaction.id,
                                         patent.uri[len(REST_ENDPOINT):]
                                         )
-        triples = [('pcdm', 'hasFile', patent.file.uri)]
+        triples = [('pcdm', 'hasFile', '<{0}>'.format(patent.file.uri))]
         if patent.sparql_update(sparql_uri, auth, triples):
             print("success!")
         else:
@@ -413,18 +465,31 @@ def main():
         
         # update and patch binary metadata graph
         print("Updating binary metadata graph... ", end='')
+        triples = [ 
+            ('pcdm', 'fileOf', '<{0}>'.format(patent.uri)),
+            ('dc', 'title', '"{0}"'.format(patent.file.title)),
+            ('rdf', 'type', '<{0}File>'.format(ns['pcdm'])),
+            ('bibo', 'numPages', '"{0}"^^xsd:integer'.format(patent.pages)),
+            ('dc', 'date', '"{0}"^^xsd:dateTime'.format(patent.scan_date))
+            ]
         sparql_uri = "{0}{1}{2}{3}".format(REST_ENDPOINT,
                                            transaction.id,
                                            patent.file.uri[len(REST_ENDPOINT):],
                                            "/fcr:metadata"
                                            )
-        triples = [('pcdm', 'fileOf', patent.uri)]
         if patent.file.sparql_update(sparql_uri, auth, triples):
             print("success!")
         else:
             print("failed!")
             transaction.rollback()
             continue
+            
+        # update collection membership
+        print("Adding patent to collection...    ", end='')
+        plantpatents.members.append(
+            ("pcdm", "hasMember", "<{0}>".format(patent.uri))
+            )
+        print("success!")
         
         # commit transaction or rollback
         print("Committing transaction...         ", end='')
@@ -437,6 +502,8 @@ def main():
         # write to log
         logfile.write("\t".join([patent.uri, patent.file.uri]) + "\n")
 
+    # update collection membership with SPARQL update
+    plantpatents.sparql_update(plantpatents.uri, auth, plantpatents.members)
 
     # after all files processed, close log
     logfile.close()
